@@ -23,17 +23,40 @@ uniform float angle2;
 uniform float intensity1;
 uniform float intensity2;
 
+uniform float canvasWidth;
+uniform float canvasHeight;
+uniform float image1Width;
+uniform float image1Height;
+uniform float image2Width;
+uniform float image2Height;
+
+
 mat2 getRotM(float angle) {
   float s = sin(angle);
   float c = cos(angle);
   return mat2(c, -s, s, c);
 }
 
+// Proportion script from here: https://gist.github.com/statico/df64c5d167362ecf7b34fca0b1459a44
+vec2 addProportionToDistortedPosition(vec2 originalDistortedPos, float imgWidth, float imgHeight){
+  /* Set proportion code */
+  vec2 s = vec2(canvasWidth, canvasHeight); // Screen
+  vec2 i = vec2(imgWidth, imgHeight); // Image
+  float rs = s.x / s.y;
+  float ri = i.x / i.y;
+  vec2 new = rs < ri ? vec2(i.x * s.y / i.y, s.y) : vec2(s.x, i.y * s.x / i.x);
+  vec2 offset = (rs < ri ? vec2((new.x - s.x) / 2.0, 0.0) : vec2(0.0, (new.y - s.y) / 2.0)) / new;
+  return originalDistortedPos * s / new + offset;
+  /* End set proportion code */
+} 
+
 void main() {
   vec4 disp = texture2D(disp, vUv);
   vec2 dispVec = vec2(disp.r, disp.g);
   vec2 distortedPosition1 = vUv + getRotM(angle1) * dispVec * intensity1 * dispFactor;
   vec2 distortedPosition2 = vUv + getRotM(angle2) * dispVec * intensity2 * (1.0 - dispFactor);
+  distortedPosition1 = addProportionToDistortedPosition(distortedPosition1, image1Width, image1Height);
+  distortedPosition2 = addProportionToDistortedPosition(distortedPosition2, image2Width, image2Height);
   vec4 _texture1 = texture2D(texture1, distortedPosition1);
   vec4 _texture2 = texture2D(texture2, distortedPosition2);
   gl_FragColor = mix(_texture1, _texture2, dispFactor);
@@ -155,8 +178,8 @@ void main() {
       mat.uniforms.texture1.value = texture1;
     }, false);
   } else {
-    var texture1 = loader.load(image1, render);
-    var texture2 = loader.load(image2, render);
+    var texture1 = loader.load(image1, function(texture){onTextureLoaded(texture, 1);});
+    var texture2 = loader.load(image2, function(texture){onTextureLoaded(texture, 2);});
 
     texture1.magFilter = texture2.magFilter = THREE.LinearFilter;
     texture1.minFilter = texture2.minFilter = THREE.LinearFilter;
@@ -196,6 +219,30 @@ void main() {
         type: 't',
         value: disp
       },
+      canvasWidth: {
+        type: 'f',
+        value: parent.offsetWidth
+      },
+      canvasHeight: {
+        type: 'f',
+        value: parent.offsetHeight
+      },
+      image1Width: {
+        type: 'f',
+        value: 700
+      },
+      image1Height: {
+        type: 'f',
+        value: 700
+      },
+      image2Width: {
+        type: 'f',
+        value: 700
+      },
+      image2Height: {
+        type: 'f',
+        value: 700
+      }
     },
 
     vertexShader: vertex,
@@ -207,6 +254,20 @@ void main() {
   var geometry = new THREE.PlaneBufferGeometry(parent.offsetWidth, parent.offsetHeight, 1);
   var object = new THREE.Mesh(geometry, mat);
   scene.add(object);
+
+  function onTextureLoaded(texture, texturePos){
+    var imgWidth = texture.image.width;
+    var imgHeight = texture.image.height;
+    if(texturePos == 1){
+      mat.uniforms.image1Width.value = imgWidth;
+      mat.uniforms.image1Height.value = imgHeight;
+    }
+    else{
+      mat.uniforms.image2Width.value = imgWidth;
+      mat.uniforms.image2Height.value = imgHeight;
+    }
+    render();
+  }
 
   function transitionIn() {
     TweenMax.to(mat.uniforms.dispFactor, speedIn, {
@@ -234,9 +295,13 @@ void main() {
   }
 
   window.addEventListener('resize', function (e) {
+    mat.uniforms.canvasWidth.value = parent.offsetWidth;
+    mat.uniforms.canvasHeight.value = parent.offsetHeight;
     renderer.setSize(parent.offsetWidth, parent.offsetHeight);
+    render();
   });
 
   this.next = transitionIn;
   this.previous = transitionOut;
+  renderer.setSize(parent.offsetWidth, parent.offsetHeight);
 };
